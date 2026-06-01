@@ -1,6 +1,20 @@
-# main.py — Unit-Economy Growth Simulator (MVP: CAC Module)
-# Запуск в Termux: python main.py
-# Roadmap Ref: Section 10 (Stage 1: UI stubs → CAC)
+"""
+Unit-Economy Growth Simulator | MVP Stage 1: CAC Module
+Roadmap Ref: Section 10 (Stage 1 → Stage 2 prep)
+Architecture: Monolithic stub → preparing for /core, /ui, /db split
+"""
+__version__ = "0.1.0-alpha"
+__author__ = "Product Analyst / Self-Taught Dev"
+__roadmap_stage__ = "UI Stubs + CAC Calculation"
+
+# Default scenario configuration (will migrate to db/config.py later)
+DEFAULT_PARAMS = {
+    "budget": 10000.0,
+    "cpc": 50.0,
+    "ctr": 2.0,
+    "funnel_conv": 5.0
+}
+
 import logging
 from datetime import datetime
 from pydantic import BaseModel, Field, field_validator
@@ -14,7 +28,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 
 # ================= 1. CORE: Валидация & Математика =================
 class MarketingParams(BaseModel):
-    """Схема маркетинговых параметров (строгая валидация по Pydantic v2)"""
+    """Pydantic v2 schema for funnel parameters. 
+    Will be extracted to db/schemas.py in Stage 3."""
     budget: float = Field(default=10000.0, ge=0, description="Рекламный бюджет (₽)")
     cpc: float = Field(default=50.0, gt=0, description="Цена за клик (₽)")
     ctr: float = Field(default=2.0, ge=0, le=100, description="CTR (%)")
@@ -32,11 +47,12 @@ def format_currency(value: float) -> str:
     return f"{value:,.1f} ₽".replace(",", " ")
 
 def calculate_cac(p: MarketingParams) -> float:
-    """Расчет Cost of Customer Acquisition по воронке"""
+    """Core CAC formula: Spend / (Clicks * CTR% * Conv%)
+    Protected against ZeroDivision by max(customers, 1)"""
     clicks = p.budget / p.cpc
     leads = clicks * (p.ctr / 100)
     customers = leads * (p.funnel_conv / 100)
-    return p.budget / max(customers, 1)  # защита от ZeroDivision
+    return p.budget / max(customers, 1)
 
 # ================= 2. UI: Реактивный NiceGUI Dashboard =================
 ui.add_head_html('''<meta name="viewport" content="width=device-width, initial-scale=1">''')
@@ -132,6 +148,9 @@ def run_internal_tests():
 ui.button('🧪 Запустить тесты', on_click=run_internal_tests).style('margin: 20px auto; display: block;')
 
 update_dashboard()
+
+# TODO[Stage-2]: Replace hardcoded update_dashboard() with reactive binding
+# TODO[Stage-3]: Migrate DEFAULT_PARAMS to SQLite + Pydantic validation layer
 
 if __name__ == '__main__':
     ui.run(host='0.0.0.0', port=8000, reload=False, title=f'UnitEco Simulator v{__version__}')
