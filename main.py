@@ -1,156 +1,99 @@
 """
-Unit-Economy Growth Simulator | MVP Stage 1: CAC Module
-Roadmap Ref: Section 10 (Stage 1 → Stage 2 prep)
-Architecture: Monolithic stub → preparing for /core, /ui, /db split
+Unit-Economy Growth Simulator | MVP Stage 1: CAC → LTV Bridge
+Roadmap Ref: Section 7 (Fixed Header KPIs), Section 10 (Stage 2 prep)
 """
-__version__ = "0.1.0-alpha"
-__author__ = "Product Analyst / Self-Taught Dev"
-__roadmap_stage__ = "UI Stubs + CAC Calculation"
+__version__ = "0.1.1-beta"
+__roadmap_stage__ = "UI Stubs + CAC → LTV Pipeline Prep"
 
-# Default scenario configuration (will migrate to db/config.py later)
-DEFAULT_PARAMS = {
-    "budget": 10000.0,
-    "cpc": 50.0,
-    "ctr": 2.0,
-    "funnel_conv": 5.0
-}
-
-import logging
-from datetime import datetime
-from pydantic import BaseModel, Field, field_validator
 from nicegui import ui
 import plotly.graph_objects as go
+from pydantic import BaseModel, Field
+from datetime import datetime
 
-__version__ = "0.1.0"
-__build_date__ = datetime.now().strftime("%Y-%m-%d")
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-
-# ================= 1. CORE: Валидация & Математика =================
+# --- Data Contracts (Passport Sec 7: Pydantic Validation) ---
 class MarketingParams(BaseModel):
-    """Pydantic v2 schema for funnel parameters. 
-    Will be extracted to db/schemas.py in Stage 3."""
-    budget: float = Field(default=10000.0, ge=0, description="Рекламный бюджет (₽)")
-    cpc: float = Field(default=50.0, gt=0, description="Цена за клик (₽)")
-    ctr: float = Field(default=2.0, ge=0, le=100, description="CTR (%)")
-    funnel_conv: float = Field(default=5.0, ge=0, le=100, description="Конверсия в покупку (%)")
+    budget: float = Field(default=10000.0, ge=0)
+    cpc: float = Field(default=50.0, gt=0)
+    ctr: float = Field(default=2.0, ge=0, le=100)
+    funnel_conv: float = Field(default=5.0, ge=0, le=100)
 
-    @field_validator('budget', 'cpc')
-    @classmethod
-    def check_positive(cls, v: float) -> float:
-        if v <= 0:
-            raise ValueError("Бюджет и CPC должны быть > 0")
-        return v
+class ProductParams(BaseModel):
+    """Параметры удержания для будущего LTV-модуля"""
+    avg_revenue: float = Field(default=500.0, ge=0)
+    monthly_churn: float = Field(default=5.0, ge=0, le=100)
+    lifespan_months: float = Field(default=12.0, ge=1)
 
-def format_currency(value: float) -> str:
-    """Единый формат валюты для UI (разделитель тысяч, 1 знак)"""
-    return f"{value:,.1f} ₽".replace(",", " ")
-
+# --- Core Calculations (Passport Sec 7: Strict Methodology) ---
 def calculate_cac(p: MarketingParams) -> float:
-    """Core CAC formula: Spend / (Clicks * CTR% * Conv%)
-    Protected against ZeroDivision by max(customers, 1)"""
     clicks = p.budget / p.cpc
-    leads = clicks * (p.ctr / 100)
-    customers = leads * (p.funnel_conv / 100)
+    customers = clicks * (p.ctr / 100) * (p.funnel_conv / 100)
     return p.budget / max(customers, 1)
 
-# ================= 2. UI: Реактивный NiceGUI Dashboard =================
-ui.add_head_html('''<meta name="viewport" content="width=device-width, initial-scale=1">''')
-ui.add_css('''
-    body { font-family: system-ui, -apple-system, sans-serif; background: #f8f9fa; padding-bottom: 24px; }
-    .kpi-card { background: white; padding: 12px; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); text-align: center; }
-    .kpi-label { font-size: 0.75rem; color: #666; margin-bottom: 4px; }
-    .kpi-value { font-size: 1.4rem; font-weight: 700; color: #1565c0; }
-    .slider-row { width: 100%; max-width: 500px; margin: 16px auto; }
-    .slider-label { font-weight: 600; margin-bottom: 4px; }
-''')
-# Состояние
-params = MarketingParams()
+def calculate_ltv(p: ProductParams, cac: float) -> dict:
+    """Заглушка LTV-модуля. Будет заменена на DuckDB-агрегацию в Stage 3"""
+    ltv = p.avg_revenue * p.lifespan_months
+    romi = ((ltv - cac) / cac) * 100 if cac > 0 else 0
+    return {"ltv": ltv, "romi": round(romi, 2), "status": "mock"}
 
-# Fixed Header с KPI
+# --- UI Layer (Passport Sec 7: Fixed Header & Reactive Sliders) ---
+ui.add_css('''
+    body { background: #f8f9fa; padding-bottom: 24px; }
+    .kpi-card { background: white; padding: 8px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); text-align: center; }
+    .kpi-label { font-size: 0.7rem; color: #666; }
+    .kpi-value { font-size: 1.2rem; font-weight: 700; color: #1565c0; }
+''')
+
 with ui.header().classes('bg-white shadow-md px-4 py-2 w-full'):
     with ui.row().classes('w-full justify-around items-center'):
-        ui.label('LTV').classes('kpi-label')
-        ui.label('—').classes('kpi-value')
-        ui.label('CAC').classes('kpi-label')
-        cac_display = ui.label('0.00 ₽').classes('kpi-value')
-        ui.label('ROMI').classes('kpi-label')
-        ui.label('—').classes('kpi-value')
-    ui.label(f'v{__version__} • {__build_date__}').classes('text-xs text-gray-400 absolute right-4 top-2')
+        with ui.column().classes('kpi-card'):
+            ui.label('LTV').classes('kpi-label')
+            ltv_lbl = ui.label('— ₽').classes('kpi-value')
+        with ui.column().classes('kpi-card'):
+            ui.label('CAC').classes('kpi-label')
+            cac_lbl = ui.label('0.00 ₽').classes('kpi-value')
+        with ui.column().classes('kpi-card'):
+            ui.label('ROMI').classes('kpi-label')
+            romi_lbl = ui.label('— %').classes('kpi-value')
 
 ui.markdown('### 📊 Unit-Economy Simulator').style('text-align:center; margin: 12px 0 0;')
 
-# Слайдеры ввода
-def build_slider(label: str, mn: float, mx: float, step: float, init: float) -> tuple[ui.slider, ui.label]:
-    with ui.column().classes('slider-row'):
-        ui.label(label).classes('slider-label')
-        sl = ui.slider(min=mn, max=mx, step=step, value=init).classes('w-full')
-        val_label = ui.label(f'{init:g}').classes('text-center text-sm text-gray-600')
-    return sl, val_label
+# Слайдеры (готовы к реактивной привязке)
+with ui.column().classes('w-full max-w-md mx-auto p-4'):
+    ui.label('⚙️ Marketing Params').classes('text-h6 font-bold mb-2')
+    sl_budget = ui.slider(min=500, max=100000, value=10000, label='Budget (₽)').classes('w-full')
+    sl_cpc = ui.slider(min=5, max=500, value=50, label='CPC (₽)').classes('w-full')
+    sl_ctr = ui.slider(min=0.1, max=25, value=2.0, label='CTR (%)').classes('w-full')
+    sl_conv = ui.slider(min=0.5, max=30, value=5.0, label='Conv (%)').classes('w-full')
 
-sl_budget, lb_budget = build_slider('💰 Бюджет (₽)', 500, 100_000, 500, params.budget)
-sl_cpc, lb_cpc = build_slider('🔗 CPC (₽)', 5, 500, 1, params.cpc)
-sl_ctr, lb_ctr = build_slider('👁️ CTR (%)', 0.1, 25, 0.1, params.ctr)
-sl_conv, lb_conv = build_slider('🎯 Конверсия (%)', 0.5, 30, 0.1, params.funnel_conv)
+    ui.label('📉 Product Params (LTV Prep)').classes('text-h6 font-bold mb-2 mt-4')
+    sl_revenue = ui.slider(min=50, max=5000, value=500, label='ARPU (₽)').classes('w-full')
+    sl_churn = ui.slider(min=1, max=20, value=5.0, label='Churn (%)').classes('w-full')
 
-# График воронки (Plotly)
-chart = ui.plotly().classes('w-full h-64 mt-4')
+chart = ui.plotly().classes('w-full h-48 mt-4')
 
-def update_dashboard():
+def refresh_metrics():
     try:
-        p = MarketingParams(
-            budget=sl_budget.value,
-            cpc=sl_cpc.value,
-            ctr=sl_ctr.value,
-            funnel_conv=sl_conv.value
-        )
-        cac = calculate_cac(p)
-        cac_display.text = format_currency(cac)
-
-        lb_budget.text = f'{p.budget:,.0f}'
-        lb_cpc.text = f'{p.cpc:.0f}'
-        lb_ctr.text = f'{p.ctr:.1f}%'
-        lb_conv.text = f'{p.funnel_conv:.1f}%'
-
-        clicks = p.budget / p.cpc        leads = clicks * (p.ctr / 100)
-        customers = leads * (p.funnel_conv / 100)
-
-        fig = go.Figure(go.Bar(
-            x=['Клики', 'Лиды', 'Покупки'],
-            y=[clicks, leads, max(customers, 1)],
-            marker_color=['#90caf9', '#42a5f5', '#1565c0'],
-            text=[f'{clicks:,.0f}', f'{leads:,.0f}', f'{max(customers, 1):.0f}'],
-            textposition='auto'
-        ))
-        fig.update_layout(
-            margin=dict(l=20, r=20, t=20, b=20),
-            height=220,
-            showlegend=False,
-            title='Воронка трафика (реактивный расчет)'
-        )
+        m = MarketingParams(budget=sl_budget.value, cpc=sl_cpc.value, ctr=sl_ctr.value, funnel_conv=sl_conv.value)
+        p = ProductParams(avg_revenue=sl_revenue.value, monthly_churn=sl_churn.value)
+        
+        cac = calculate_cac(m)
+        res = calculate_ltv(p, cac)
+        
+        cac_lbl.text = f'{cac:.1f} ₽'
+        ltv_lbl.text = f'{res["ltv"]:.1f} ₽'
+        romi_lbl.text = f'{res["romi"]:.1f} %'
+        
+        # Заглушка графика
+        fig = go.Figure(go.Bar(x=['LTV', 'CAC'], y=[res['ltv'], cac], marker_color=['#4caf50', '#f44336']))
+        fig.update_layout(margin=dict(l=10,r=10,t=10,b=10), height=180, showlegend=False)
         chart.figure = fig
     except Exception as e:
-        cac_display.text = '⚠️ Ошибка'
-        ui.notify(f'Валидация: {str(e)}', type='warning')
+        ui.notify(f'Calc Error: {e}', type='warning')
 
-for sl in [sl_budget, sl_cpc, sl_ctr, sl_conv]:
-    sl.on_value_change(lambda _: update_dashboard())
+for sl in [sl_budget, sl_cpc, sl_ctr, sl_conv, sl_revenue, sl_churn]:
+    sl.on_value_change(lambda _: refresh_metrics())
 
-def run_internal_tests():
-    try:
-        p = MarketingParams(budget=10000, cpc=50, ctr=2, funnel_conv=5)
-        expected = 10000 / ((10000/50)*0.02*0.05)
-        assert abs(calculate_cac(p) - expected) < 0.01
-        ui.notify('✅ Unit-тесты прошли успешно', type='positive')
-    except Exception as e:
-        ui.notify(f'❌ Тесты упали: {e}', type='negative')
-
-ui.button('🧪 Запустить тесты', on_click=run_internal_tests).style('margin: 20px auto; display: block;')
-
-update_dashboard()
-
-# TODO[Stage-2]: Replace hardcoded update_dashboard() with reactive binding
-# TODO[Stage-3]: Migrate DEFAULT_PARAMS to SQLite + Pydantic validation layer
+refresh_metrics()
 
 if __name__ == '__main__':
-    ui.run(host='0.0.0.0', port=8000, reload=False, title=f'UnitEco Simulator v{__version__}')
+    ui.run(host='0.0.0.0', port=8000, reload=False, title=f'UnitEco v{__version__}')
